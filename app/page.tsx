@@ -1,291 +1,777 @@
 'use client';
 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowRight, BarChart3, BookOpen, Calculator, Check, CheckCircle2,
-  ChevronRight, CircleDollarSign, Copy, Home as HomeIcon, Landmark, Menu, Search,
-  ShieldCheck, Sparkles, Target, TrendingUp, X,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  BookOpen,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  GraduationCap,
+  Lightbulb,
+  Menu,
+  Search,
+  Sparkles,
+  Target,
+  TriangleAlert,
+  X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { chapters, type Chapter } from '../src/chapter-data';
 
-type Chapter = {
-  id: string;
-  number: string;
-  title: string;
-  label: string;
-  summary: string;
-  concepts: string[];
-  formula?: string;
+const progressKey = 'valuation-study-progress';
+const legacyProgressKey = 'valuation-study-completed';
+const lastLocationKey = 'valuation-study-location';
+const validChapterNumbers = new Set(chapters.map((chapter) => chapter.number));
+type DrawerMode = 'closed' | 'menu' | 'search';
+type LessonSectionId = 'easy' | 'flow' | 'key' | 'compare' | 'formula' | 'check';
+type SearchResult = {
+  chapter: Chapter;
+  section: LessonSectionId;
+  sectionLabel: string;
+  snippet: string;
+};
+type SearchJump = Pick<SearchResult, 'section' | 'sectionLabel' | 'snippet'> & { query: string };
+
+const sectionLabels: Record<LessonSectionId, string> = {
+  easy: '쉬운 설명',
+  flow: '핵심 흐름',
+  key: '핵심 개념',
+  compare: '비교 정리',
+  formula: '수식 이해',
+  check: '이해도 확인',
 };
 
-const chapters: Chapter[] = [
-  {
-    id: 'chapter-1', number: '01', title: '가치평가 기초', label: '판단의 프레임',
-    summary: '평가 목적·대상·기준일을 정하고 기업과 산업을 분석한 뒤, DCF·상대가치·자산가치 중 방법을 선택합니다.',
-    concepts: ['목적·대상·기준일', '기업·산업 분석', '방법 및 변수 선택', '민감도 분석과 보고'],
-  },
-  {
-    id: 'chapter-2', number: '02', title: '이익기준 접근법', label: '시간가치와 현금흐름',
-    summary: '서로 다른 시점의 돈을 현재가치로 맞추고, 세후 증분현금흐름만 골라 투자안의 실제 가치를 계산합니다.',
-    concepts: ['현재가치·미래가치', '연금·영구연금', '증분현금흐름', '초기·영업·종료 현금흐름'],
-    formula: 'PV = FV / (1 + r)ⁿ',
-  },
-  {
-    id: 'chapter-3', number: '03', title: '자본비용', label: '할인율 설계',
-    summary: '투자자가 요구하는 최소수익률을 부채·우선주·보통주 원천별로 구하고 시장가치 가중치로 WACC를 만듭니다.',
-    concepts: ['세후 타인자본비용', '채권 YTM', 'CAPM과 보통주비용', '시장가치 가중 WACC'],
-    formula: 'kₑ = Rf + β(E(Rm) − Rf)',
-  },
-  {
-    id: 'chapter-4', number: '04', title: '투자안 가치평가', label: '채택과 기각',
-    summary: 'NPV를 기준으로 부의 증가를 판단하고, IRR·회수기간·할인회수기간·회계적 수익률·PI의 장단점을 비교합니다.',
-    concepts: ['NPV > 0', 'IRR과 요구수익률', '회수기간의 한계', 'NPV–IRR 충돌과 Fisher 수익률'],
-    formula: 'NPV = Σ CFₜ / (1 + r)ᵗ − I₀',
-  },
-  {
-    id: 'chapter-5', number: '05', title: '채권·주식 가치평가', label: '증권의 가격',
-    summary: '채권의 현금흐름과 수익률 관계, 만기·표면이율에 따른 가격 민감도, 주식의 배당할인모형을 연결합니다.',
-    concepts: ['채권가격–수익률 역관계', '만기·표면이율과 민감도', 'YTM·수익률곡선·신용등급', '무성장·고정성장 DDM'],
-  },
-  {
-    id: 'chapter-6', number: '06', title: '자산·시장가치 접근법', label: '비교 가능한 가격',
-    summary: '자산에서 부채를 뺀 순자산가치와, 유사기업의 배수를 이용하는 상대가치평가를 비교합니다.',
-    concepts: ['장부가치·시장가치·청산가치', 'PER', 'PBR', 'PCR·PSR·Price/EBITDA'],
-  },
-  {
-    id: 'chapter-7', number: '07', title: '기본적 분석', label: '경제→산업→기업',
-    summary: '경제·산업·기업 요인이 미래 현금흐름과 할인율에 어떻게 영향을 주는지 톱다운과 보텀업 관점으로 분석합니다.',
-    concepts: ['거시경제 변수와 주가', 'Porter 산업구조', '제품수명주기', '질적·양적 기업분석'],
-  },
-  {
-    id: 'chapter-8', number: '08', title: '재무비율 종합분석', label: '흩어진 비율을 하나로',
-    summary: '공통형·지수형 재무제표에서 출발해 ROI·ROE, 지수법과 시각적 종합평가의 구조와 한계를 살핍니다.',
-    concepts: ['공통형·지수형 재무제표', 'DuPont ROI', 'ROE와 부채비율', '지수법·삼각평가·원형도표'],
-    formula: 'ROI = 순이익률 × 총자산회전율',
-  },
-  {
-    id: 'chapter-9', number: '09', title: '레버리지 분석', label: '고정비가 만드는 확대',
-    summary: '고정영업비와 고정재무비가 매출 변화의 손익 효과를 어떻게 확대하는지 DOL·DFL·DCL로 측정합니다.',
-    concepts: ['영업레버리지와 영업위험', '재무레버리지와 재무위험', '결합레버리지', '매출·EBIT 증가와 위험 감소'],
-    formula: 'DCL = DOL × DFL',
-  },
+const normalizeSearch = (value: string) => value.normalize('NFKC').toLowerCase();
+const compactSearch = (value: string) => normalizeSearch(value).replace(/[^\p{L}\p{N}]+/gu, '');
+
+const getSearchEntries = (chapter: Chapter): { section: LessonSectionId; text: string }[] => [
+  ...(chapter.formula ? [{ section: 'formula' as const, text: `${chapter.formula.title} ${chapter.formula.expression} ${chapter.formula.explanation}` }] : []),
+  { section: 'key', text: `${chapter.keyTitle} ${chapter.keyPoints.flatMap((point) => [point.title, point.body]).join(' ')}` },
+  { section: 'compare', text: `${chapter.compareTitle} ${chapter.compareLead} ${chapter.compareHeaders.join(' ')} ${chapter.compareRows.flat().join(' ')}` },
+  { section: 'easy', text: `${chapter.title} ${chapter.description} ${chapter.topics.join(' ')} ${chapter.easyTitle} ${chapter.easyBody} ${chapter.definition}` },
+  { section: 'flow', text: `${chapter.flowTitle} ${chapter.flowNodes.flatMap((node) => [node.label, node.title, node.detail]).join(' ')}` },
+  { section: 'check', text: `${chapter.trap} ${chapter.quiz.question} ${chapter.quiz.answer} ${chapter.quiz.explanation} ${chapter.memory} ${chapter.memories.join(' ')}` },
 ];
 
-const quizItems = [
-  { question: 'NPV와 IRR의 결론이 충돌할 때 강의자료가 우선하라고 설명한 기준은?', options: ['IRR', 'NPV', '회수기간'], answer: 1, note: 'NPV는 주주 부의 절대 증가액과 가치가산원칙을 직접 반영합니다.' },
-  { question: '매몰원가는 투자안의 증분현금흐름에 포함할까?', options: ['포함한다', '포함하지 않는다', '세후에만 포함한다'], answer: 1, note: '이미 발생해 의사결정으로 바뀌지 않는 비용이므로 제외합니다.' },
-  { question: '결합레버리지도 DCL의 올바른 관계는?', options: ['DOL + DFL', 'DOL × DFL', 'DOL ÷ DFL'], answer: 1, note: '매출→EBIT 확대와 EBIT→EPS 확대가 연속되므로 곱합니다.' },
-];
+const makeSnippet = (text: string, query: string) => {
+  const normalizedText = normalizeSearch(text);
+  const tokens = normalizeSearch(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const matchIndex = tokens.reduce((found, token) => found >= 0 ? found : normalizedText.indexOf(token), -1);
+  if (text.length <= 96) return text;
 
-const storageKey = 'valuation-study-completed';
+  const start = Math.max(0, matchIndex >= 0 ? matchIndex - 24 : 0);
+  const end = Math.min(text.length, start + 96);
+  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
+};
+
+const findSearchResult = (chapter: Chapter, query: string): SearchResult | null => {
+  const compactQuery = compactSearch(query);
+  if (!compactQuery) return null;
+
+  const tokens = normalizeSearch(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(compactSearch);
+  const entries = getSearchEntries(chapter);
+  const scored = entries.map((entry) => {
+    const compactText = compactSearch(entry.text);
+    const directMatch = compactText.includes(compactQuery);
+    const tokenMatches = tokens.filter((token) => compactText.includes(token)).length;
+    return { ...entry, score: (directMatch ? 100 : 0) + tokenMatches };
+  }).sort((a, b) => b.score - a.score);
+
+  const wholeChapter = compactSearch(entries.map((entry) => entry.text).join(' '));
+  const chapterMatches = wholeChapter.includes(compactQuery)
+    || (tokens.length > 1 && tokens.every((token) => wholeChapter.includes(token)));
+  if (!chapterMatches || scored[0].score === 0) return null;
+
+  const best = scored[0];
+  return {
+    chapter,
+    section: best.section,
+    sectionLabel: sectionLabels[best.section],
+    snippet: makeSnippet(best.text, query),
+  };
+};
+
+const parseSectionHash = (hash: string): LessonSectionId | undefined => {
+  const section = hash.replace(/^#/, '') as LessonSectionId;
+  return section in sectionLabels ? section : undefined;
+};
+
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const readStoredProgress = (): { completed: number[]; failed: boolean } => {
+  if (typeof window === 'undefined') return { completed: [], failed: false };
+  try {
+    const saved = window.localStorage.getItem(progressKey) ?? window.localStorage.getItem(legacyProgressKey);
+    if (!saved) return { completed: [], failed: false };
+    const parsed: unknown = JSON.parse(saved);
+    const rawNumbers = Array.isArray(parsed)
+      ? parsed.map((id) => typeof id === 'string' ? Number(id.replace('chapter-', '')) : id)
+      : typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as { completedChapterIds?: unknown }).completedChapterIds)
+        ? (parsed as { completedChapterIds: unknown[] }).completedChapterIds.map((id) => typeof id === 'string' ? Number(id.replace('chapter-', '')) : id)
+        : [];
+    return {
+      completed: [...new Set(rawNumbers.filter(
+        (number): number is number => typeof number === 'number' && validChapterNumbers.has(number),
+      ))],
+      failed: false,
+    };
+  } catch {
+    return { completed: [], failed: true };
+  }
+};
+
+const readInitialLocation = (): { chapter: number; section?: LessonSectionId } => {
+  if (typeof window === 'undefined') return { chapter: chapters[0]?.number ?? 1 };
+
+  const url = new URL(window.location.href);
+  const urlChapter = Number(url.searchParams.get('chapter'));
+  if (validChapterNumbers.has(urlChapter)) return { chapter: urlChapter, section: parseSectionHash(url.hash) };
+
+  try {
+    const stored = window.localStorage.getItem(lastLocationKey);
+    if (stored) {
+      const parsed = JSON.parse(stored) as { chapter?: unknown; section?: unknown };
+      if (typeof parsed.chapter === 'number' && validChapterNumbers.has(parsed.chapter)) {
+        const section = typeof parsed.section === 'string' ? parseSectionHash(parsed.section) : undefined;
+        return { chapter: parsed.chapter, section };
+      }
+    }
+  } catch {
+    // A blocked storage API should never prevent the lesson from opening.
+  }
+
+  return { chapter: chapters[0]?.number ?? 1 };
+};
+
+/* oxlint-disable jsx-a11y/no-noninteractive-tabindex, jsx-a11y/no-noninteractive-element-interactions -- this scroll region needs explicit keyboard panning */
+function ComparisonTable({ chapter }: { chapter: Chapter }) {
+  const tableHintId = `compare-table-hint-${chapter.number}`;
+
+  return (
+    <>
+      <p className="table-scroll-hint" id={tableHintId}>표를 좌우로 움직여 비교하세요. 첫 열은 행의 기준으로 고정됩니다.</p>
+      <section
+        className="table-scroll"
+        aria-label={`${chapter.compareTitle} 비교표`}
+        aria-describedby={tableHintId}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+          const scrollArea = event.currentTarget;
+          const maxScrollLeft = scrollArea.scrollWidth - scrollArea.clientWidth;
+          const canScroll = event.key === 'ArrowLeft'
+            ? scrollArea.scrollLeft > 0
+            : scrollArea.scrollLeft < maxScrollLeft - 1;
+          if (!canScroll) return;
+
+          event.preventDefault();
+          scrollArea.scrollBy({
+            left: event.key === 'ArrowRight' ? 80 : -80,
+            behavior: 'auto',
+          });
+        }}
+      >
+        <table className="compare-table">
+          <thead><tr>{chapter.compareHeaders.map((header) => <th scope="col" key={header}>{header}</th>)}</tr></thead>
+          <tbody>
+            {chapter.compareRows.map((row) => (
+              <tr key={row.join('-')}>
+                {row.map((cell, index) => index === 0
+                  ? <th scope="row" key={`${cell}-${index}`}>{cell}</th>
+                  : <td key={`${cell}-${index}`}>{cell}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <div className="compare-cards" aria-label={`${chapter.compareTitle} 모바일 비교 카드`}>
+        {chapter.compareRows.map((row) => (
+          <article key={`card-${row.join('-')}`}>
+            <h3>{row[0]}</h3>
+            <dl>
+              <div><dt>{chapter.compareHeaders[1]}</dt><dd>{row[1]}</dd></div>
+              <div><dt>{chapter.compareHeaders[2]}</dt><dd>{row[2]}</dd></div>
+            </dl>
+          </article>
+        ))}
+      </div>
+    </>
+  );
+}
+/* oxlint-enable jsx-a11y/no-noninteractive-tabindex, jsx-a11y/no-noninteractive-element-interactions */
+
+function SearchLocationNote({ section, jump }: { section: LessonSectionId; jump: SearchJump | null }) {
+  if (!jump || jump.section !== section) return null;
+  return (
+    <div className="search-location-note">
+      <Search size={16} aria-hidden="true" />
+      <span><strong><mark>{jump.query}</mark> 검색 위치</strong>{jump.sectionLabel} · {jump.snippet}</span>
+    </div>
+  );
+}
+
+function ChapterLesson({
+  chapter,
+  completed,
+  searchJump,
+  onToggleCompleted,
+  onSelectChapter,
+  onNavigateSection,
+}: {
+  chapter: Chapter;
+  completed: boolean;
+  searchJump: SearchJump | null;
+  onToggleCompleted: () => void;
+  onSelectChapter: (number: number) => void;
+  onNavigateSection: (section: LessonSectionId) => void;
+}) {
+  const [answerOpen, setAnswerOpen] = useState(false);
+  const answerId = `quiz-answer-${chapter.number}`;
+  const previousChapter = chapters.find((item) => item.number === chapter.number - 1);
+  const nextChapter = chapters.find((item) => item.number === chapter.number + 1);
+
+  return (
+    <article className="lesson-content">
+      <section className={`intro-card ${searchJump?.section === 'easy' ? 'search-highlight' : ''}`} id="easy" tabIndex={-1}>
+        <SearchLocationNote section="easy" jump={searchJump} />
+        <div className="section-kicker"><Lightbulb size={17} /> 가장 쉬운 설명</div>
+        <h2>{chapter.easyTitle}</h2>
+        <p>{chapter.easyBody}</p>
+        <div className="definition-box">
+          <strong>한 문장 정의</strong>
+          <span>{chapter.definition}</span>
+        </div>
+      </section>
+
+      <section className={`lesson-section ${searchJump?.section === 'flow' ? 'search-highlight' : ''}`} id="flow" tabIndex={-1}>
+        <SearchLocationNote section="flow" jump={searchJump} />
+        <div className="section-heading">
+          <div><span className="section-number">01</span><h2>{chapter.flowTitle}</h2></div>
+          <p>흐름을 먼저 잡으면 세부 용어가 훨씬 쉽게 연결됩니다.</p>
+        </div>
+        <div className="flow-diagram dynamic-flow">
+          {chapter.flowNodes.map((node, index) => (
+            <div className="flow-fragment" key={node.title}>
+              <div className="flow-node">
+                <span>{node.label}</span>
+                <strong>{node.title}</strong>
+                <small>{node.detail}</small>
+              </div>
+              {index < chapter.flowNodes.length - 1 && <ArrowRight className="flow-arrow" aria-hidden="true" />}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={`lesson-section ${searchJump?.section === 'key' ? 'search-highlight' : ''}`} id="key" tabIndex={-1}>
+        <SearchLocationNote section="key" jump={searchJump} />
+        <div className="section-heading">
+          <div><span className="section-number">02</span><h2>{chapter.keyTitle}</h2></div>
+          <p>시험 전에 반드시 설명할 수 있어야 하는 핵심입니다.</p>
+        </div>
+        <div className="role-grid">
+          {chapter.keyPoints.map((point, index) => (
+            <div className="role-card" key={point.title}>
+              <div className="role-icon">{String(index + 1).padStart(2, '0')}</div>
+              <h3>{point.title}</h3>
+              <p>{point.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={`lesson-section ${searchJump?.section === 'compare' ? 'search-highlight' : ''}`} id="compare" tabIndex={-1}>
+        <SearchLocationNote section="compare" jump={searchJump} />
+        <div className="section-heading">
+          <div><span className="section-number">03</span><h2>{chapter.compareTitle}</h2></div>
+          <p>{chapter.compareLead}</p>
+        </div>
+        <ComparisonTable chapter={chapter} />
+      </section>
+
+      {chapter.formula && (
+        <section className={`lesson-section ${searchJump?.section === 'formula' ? 'search-highlight' : ''}`} id="formula" tabIndex={-1}>
+          <SearchLocationNote section="formula" jump={searchJump} />
+          <div className="section-heading">
+            <div><span className="section-number">04</span><h2>{chapter.formula.title}</h2></div>
+            <p>수식은 암기보다 각 기호가 뜻하는 관계를 이해하세요.</p>
+          </div>
+          <div className="formula-card">
+            <div className="formula-expression">{chapter.formula.expression}</div>
+            <p>{chapter.formula.explanation}</p>
+          </div>
+        </section>
+      )}
+
+      <section className="trap-card">
+        <TriangleAlert size={22} />
+        <div><strong>자주 틀리는 지점</strong><p>{chapter.trap}</p></div>
+      </section>
+
+      <section className={`quiz-card ${searchJump?.section === 'check' ? 'search-highlight' : ''}`} id="check" tabIndex={-1}>
+        <SearchLocationNote section="check" jump={searchJump} />
+        <div className="quiz-label"><CircleHelp size={18} /> 이해도 확인</div>
+        <h2>{chapter.quiz.question}</h2>
+        <button
+          type="button"
+          className="answer-button"
+          onClick={() => setAnswerOpen((open) => !open)}
+          aria-expanded={answerOpen}
+          aria-controls={answerId}
+        >
+          {answerOpen ? '정답 닫기' : '정답 확인'} <ChevronRight size={17} />
+        </button>
+        <section className="quiz-answer" id={answerId} hidden={!answerOpen} aria-label="퀴즈 정답">
+          <strong>{chapter.quiz.answer}</strong><span>{chapter.quiz.explanation}</span>
+        </section>
+      </section>
+
+      <section className="memory-section">
+        <div className="section-kicker"><Sparkles size={17} /> 시험 직전 기억 카드</div>
+        <div className="memory-grid">
+          {chapter.memories.map((memory) => <div className="memory-card" key={memory}>{memory}</div>)}
+        </div>
+      </section>
+
+      <section className="draft-note">
+        <strong>이 장은 13개 강의자료 기반 정리입니다.</strong>
+        <p>기호 정의와 문제 조건은 해당 장의 강의자료와 함께 확인하세요.</p>
+      </section>
+
+      <section className="lesson-finish" aria-label={`${chapter.title} 학습 마무리`}>
+        <div>
+          <span>CHAPTER {String(chapter.number).padStart(2, '0')} 마무리</span>
+          <strong>{completed ? '이 장의 학습을 완료했어요.' : '복습을 마쳤다면 완료로 표시하세요.'}</strong>
+        </div>
+        <button type="button" className={`finish-complete ${completed ? 'done' : ''}`} onClick={onToggleCompleted} aria-pressed={completed}>
+          <Target size={18} /> {completed ? '완료 취소' : '학습 완료'}
+        </button>
+        <nav aria-label="장 이동">
+          {previousChapter
+            ? <button type="button" onClick={() => onSelectChapter(previousChapter.number)}><ArrowLeft size={18} /> 이전 장</button>
+            : <span />}
+          <button type="button" onClick={() => onNavigateSection('easy')}><ArrowUp size={18} /> 맨 위</button>
+          {nextChapter
+            ? <button type="button" className="next-chapter" onClick={() => onSelectChapter(nextChapter.number)}>다음 장 <ArrowRight size={18} /></button>
+            : <span />}
+        </nav>
+      </section>
+    </article>
+  );
+}
+
+function SectionNavigation({
+  chapter,
+  compact = false,
+  onNavigate,
+}: {
+  chapter: Chapter;
+  compact?: boolean;
+  onNavigate: (section: LessonSectionId) => void;
+}) {
+  const sections = (Object.keys(sectionLabels) as LessonSectionId[])
+    .filter((section) => section !== 'formula' || chapter.formula);
+
+  return (
+    <nav className={compact ? 'compact-section-nav' : 'section-links'} aria-label="이 장의 구성">
+      {compact && <strong>바로가기</strong>}
+      {sections.map((section) => (
+        <a
+          key={section}
+          href={`?chapter=${chapter.number}#${section}`}
+          onClick={(event) => {
+            event.preventDefault();
+            onNavigate(section);
+          }}
+        >
+          {sectionLabels[section]}
+        </a>
+      ))}
+    </nav>
+  );
+}
 
 export default function Home() {
-  const [activeChapterId, setActiveChapterId] = useState(chapters[0].id);
   const [query, setQuery] = useState('');
-  const [completed, setCompleted] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stored: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
-      return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string' && chapters.some((chapter) => chapter.id === id)) : [];
-    } catch { return []; }
-  });
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [activeChapter, setActiveChapter] = useState(() => readInitialLocation().chapter);
+  const [completed, setCompleted] = useState<number[]>([]);
+  const [storageError, setStorageError] = useState('');
+  const [searchJump, setSearchJump] = useState<SearchJump | null>(null);
+  const [drawerMode, setDrawerMode] = useState<DrawerMode>('closed');
+  const [isMobile, setIsMobile] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const drawerOpenerRef = useRef<HTMLElement | null>(null);
+  const queryRef = useRef(query);
 
-  const activeIndex = chapters.findIndex((chapter) => chapter.id === activeChapterId);
-  const activeChapter = chapters[activeIndex] ?? chapters[0];
-  const progress = Math.round((completed.length / chapters.length) * 100);
-
-  const results = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return [];
-    return chapters.filter((chapter) =>
-      [chapter.title, chapter.label, chapter.summary, chapter.formula, ...chapter.concepts]
-        .filter(Boolean).join(' ').toLowerCase().includes(term),
-    );
+  const searchResults = useMemo(() => {
+    if (!query.trim()) return [];
+    return chapters.map((item) => findSearchResult(item, query)).filter((result): result is SearchResult => result !== null);
   }, [query]);
 
-  const selectChapter = (id: string, shouldScroll = true) => {
-    setActiveChapterId(id);
-    setQuery('');
-    setMenuOpen(false);
-    if (shouldScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const chapter = chapters.find((item) => item.number === activeChapter) ?? chapters[0];
+  const navigationItems: SearchResult[] = query.trim()
+    ? searchResults
+    : chapters.map((item) => ({ chapter: item, section: 'easy', sectionLabel: sectionLabels.easy, snippet: item.description }));
+  const drawerOpen = isMobile && drawerMode !== 'closed';
+  const menuModalOpen = isMobile && drawerMode === 'menu';
+  const searchResultsOpen = isMobile && drawerMode === 'search';
+  const progressPercent = chapters.length === 0 ? 0 : (completed.length / chapters.length) * 100;
 
-  const toggleComplete = (id: string) => {
-    const next = completed.includes(id) ? completed.filter((item) => item !== id) : [...completed, id];
-    setCompleted(next);
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* device-local storage may be unavailable */ }
-  };
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
 
-  const copyStudyOrder = async () => {
+  const closeDrawer = useCallback((restoreFocus = true) => {
+    setDrawerMode('closed');
+    if (!restoreFocus) return;
+
+    const opener = drawerOpenerRef.current;
+    window.requestAnimationFrame(() => {
+      if (opener?.isConnected && opener.getClientRects().length > 0) opener.focus();
+    });
+  }, []);
+
+  const focusDestination = useCallback((section?: LessonSectionId, smooth = true) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const target = section ? document.getElementById(section) : headingRef.current;
+      if (!target) return;
+      target.scrollIntoView({ behavior: smooth && !prefersReducedMotion() ? 'smooth' : 'auto', block: 'start' });
+      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+    }));
+  }, []);
+
+  const writeLocation = useCallback((number: number, section?: LessonSectionId, replace = false) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('chapter', String(number));
+    url.hash = section ? `#${section}` : '';
+    window.history[replace ? 'replaceState' : 'pushState']({}, '', `${url.pathname}${url.search}${url.hash}`);
     try {
-      await navigator.clipboard.writeText('가치평가 학습 순서: 1 기초 → 2 현금흐름 → 3 자본비용 → 4 투자안 → 5 증권 → 6 상대가치 → 7 기본적 분석 → 8 종합비율 → 9 레버리지');
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch { setCopied(false); }
+      window.localStorage.setItem(lastLocationKey, JSON.stringify({ chapter: number, section }));
+    } catch {
+      setStorageError('이 브라우저에서는 마지막 학습 위치를 저장할 수 없습니다.');
+    }
+  }, []);
+
+  const openMenu = () => {
+    setQuery('');
+    drawerOpenerRef.current = menuButtonRef.current;
+    setDrawerMode('menu');
+  };
+
+  const clearSearch = useCallback((focusInput = true) => {
+    setQuery('');
+    setDrawerMode('closed');
+    if (focusInput) {
+      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    } else {
+      window.requestAnimationFrame(() => headingRef.current?.focus({ preventScroll: true }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialLocation = readInitialLocation();
+    const savedProgress = readStoredProgress();
+    const currentUrl = new URL(window.location.href);
+    const hasValidUrlChapter = validChapterNumbers.has(Number(currentUrl.searchParams.get('chapter')));
+
+    // oxlint-disable-next-line react/react-compiler -- hydrate device-local study state after the server render
+    setActiveChapter(initialLocation.chapter);
+    setCompleted(savedProgress.completed);
+    if (savedProgress.failed) setStorageError('저장된 학습 진도를 읽지 못해 새 진도로 시작했습니다.');
+    try {
+      if (!window.localStorage.getItem(progressKey) && window.localStorage.getItem(legacyProgressKey)) {
+        window.localStorage.setItem(progressKey, JSON.stringify({
+          version: 1,
+          completedChapterIds: savedProgress.completed.map((number) => `chapter-${number}`),
+        }));
+      }
+    } catch {
+      setStorageError('기존 학습 진도는 불러왔지만 새 저장 형식으로 옮기지 못했습니다.');
+    }
+    if (!hasValidUrlChapter) writeLocation(initialLocation.chapter, initialLocation.section, true);
+    if (initialLocation.section) focusDestination(initialLocation.section, false);
+
+    const syncFromBrowser = () => {
+      const url = new URL(window.location.href);
+      const number = Number(url.searchParams.get('chapter'));
+      const nextChapter = validChapterNumbers.has(number) ? number : chapters[0]?.number ?? 1;
+      const section = parseSectionHash(url.hash);
+      setActiveChapter(nextChapter);
+      setQuery('');
+      setSearchJump(null);
+      setDrawerMode('closed');
+      focusDestination(section, false);
+      try {
+        window.localStorage.setItem(lastLocationKey, JSON.stringify({ chapter: nextChapter, section }));
+      } catch {
+        setStorageError('이 브라우저에서는 마지막 학습 위치를 저장할 수 없습니다.');
+      }
+    };
+
+    const syncProgressAcrossTabs = (event: StorageEvent) => {
+      if (event.key !== progressKey) return;
+      const synced = readStoredProgress();
+      setCompleted(synced.completed);
+      if (synced.failed) setStorageError('다른 탭의 학습 진도를 불러오지 못했습니다.');
+    };
+
+    window.addEventListener('popstate', syncFromBrowser);
+    window.addEventListener('storage', syncProgressAcrossTabs);
+    return () => {
+      window.removeEventListener('popstate', syncFromBrowser);
+      window.removeEventListener('storage', syncProgressAcrossTabs);
+    };
+  }, [focusDestination, writeLocation]);
+
+  useEffect(() => {
+    const mobileQuery = window.matchMedia('(max-width: 760px)');
+    const syncMobileState = () => {
+      setIsMobile(mobileQuery.matches);
+      if (mobileQuery.matches && queryRef.current.trim()) {
+        drawerOpenerRef.current = searchInputRef.current;
+        setDrawerMode('search');
+      } else if (!mobileQuery.matches) {
+        if (sidebarRef.current?.contains(document.activeElement)) searchInputRef.current?.focus();
+        setDrawerMode('closed');
+        drawerOpenerRef.current = null;
+      }
+    };
+
+    syncMobileState();
+    mobileQuery.addEventListener('change', syncMobileState);
+    return () => mobileQuery.removeEventListener('change', syncMobileState);
+  }, []);
+
+  useEffect(() => {
+    if (!menuModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDrawer();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !sidebarRef.current) return;
+      const focusableElements = Array.from(
+        sidebarRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey && (activeElement === first || !sidebarRef.current.contains(activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (activeElement === last || !sidebarRef.current.contains(activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeDrawer, menuModalOpen]);
+
+  useEffect(() => {
+    if (!searchResultsOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      clearSearch(false);
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (sidebarRef.current?.contains(target) || searchBoxRef.current?.contains(target)) return;
+      clearSearch(false);
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [clearSearch, searchResultsOpen]);
+
+  const toggleCompleted = () => {
+    setCompleted((current) => {
+      const next = current.includes(chapter.number)
+        ? current.filter((number) => number !== chapter.number)
+        : [...current, chapter.number];
+      try {
+        window.localStorage.setItem(progressKey, JSON.stringify({
+          version: 1,
+          completedChapterIds: next.map((number) => `chapter-${number}`),
+        }));
+        setStorageError('');
+      } catch {
+        setStorageError('완료 표시는 현재 화면에만 반영됐습니다. 브라우저 저장 권한을 확인해주세요.');
+      }
+      return next;
+    });
+  };
+
+  const selectChapter = (number: number, result?: SearchResult) => {
+    const jump = result && query.trim()
+      ? { section: result.section, sectionLabel: result.sectionLabel, snippet: result.snippet, query: query.trim() }
+      : null;
+    setActiveChapter(number);
+    setSearchJump(jump);
+    setQuery('');
+    closeDrawer(false);
+    writeLocation(number, result?.section);
+    focusDestination(result?.section);
+  };
+
+  const navigateSection = (section: LessonSectionId) => {
+    setSearchJump(null);
+    writeLocation(chapter.number, section);
+    focusDestination(section);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setQuery(value);
+    if (!isMobile) return;
+
+    if (value.trim()) {
+      drawerOpenerRef.current = searchInputRef.current;
+      setDrawerMode('search');
+    } else if (drawerMode === 'search') {
+      closeDrawer(false);
+    }
   };
 
   return (
-    <main className="site-shell" id="top">
+    <main>
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="가치평가 학습실 처음으로">
-          <span className="brand-mark">V</span>
-          <span><strong>가치평가</strong><small>Valuation Desk</small></span>
-        </a>
-
-        <label className="search-box">
-          <Search size={17} aria-hidden="true" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="학습 내용 검색" placeholder="개념·수식 검색" />
-          {query && <button className="icon-button" type="button" onClick={() => setQuery('')} aria-label="검색어 지우기"><X size={17} /></button>}
-        </label>
-
-        <div className="header-progress" aria-label={`전체 진도 ${progress}%`}>
-          <span><b>전체 진도</b><strong>{completed.length} / {chapters.length}</strong></span>
-          <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
+        <button
+          ref={menuButtonRef}
+          className="mobile-menu"
+          type="button"
+          onClick={openMenu}
+          aria-label="목차 열기"
+          aria-expanded={menuModalOpen}
+          aria-controls="chapter-sidebar"
+        ><Menu /></button>
+        <a className="brand" href={`?chapter=${chapter.number}#easy`} onClick={(event) => { event.preventDefault(); navigateSection('easy'); }}><GraduationCap /><div><strong>가치평가</strong><span>Chapter 1–9 공부노트</span></div></a>
+        <div className="search-box" ref={searchBoxRef}>
+          <Search size={18} aria-hidden="true" />
+          <input
+            ref={searchInputRef}
+            value={query}
+            onChange={(event) => handleSearchChange(event.target.value)}
+            onFocus={() => {
+              if (!isMobile || !query.trim()) return;
+              drawerOpenerRef.current = searchInputRef.current;
+              setDrawerMode('search');
+            }}
+            placeholder="개념, 상품, 제도 검색"
+            aria-label="강의 내용 검색"
+            aria-controls="chapter-navigation"
+            aria-describedby="search-results-status"
+          />
+          {query && <button type="button" className="search-clear" aria-label="검색어 지우기" onClick={() => clearSearch()}><X size={17} /></button>}
         </div>
-
-        <button className="menu-button" type="button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-controls="course-sidebar" aria-label="장별 목차 열기">
-          {menuOpen ? <X /> : <Menu />}
-        </button>
-
-        {query && (
-          <output className="search-results">
-            <span>{results.length ? `${results.length}개 장에서 찾았습니다` : '일치하는 학습 내용이 없습니다'}</span>
-            {results.map((chapter) => (
-              <button key={chapter.id} type="button" onClick={() => selectChapter(chapter.id)}>
-                <b>{chapter.number}</b><span>{chapter.title}</span><ChevronRight size={16} />
-              </button>
-            ))}
-          </output>
-        )}
+        <output className="sr-only" id="search-results-status" aria-live="polite" aria-atomic="true">
+          {query.trim() ? (searchResults.length === 0 ? `검색어 ${query}, 결과가 없습니다.` : `검색어 ${query}, 결과 ${searchResults.length}개`) : ''}
+        </output>
+        {/* Custom visual progress meter retains native progressbar semantics. */}
+        {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role */}
+        <div className="progress-summary" role="progressbar" aria-label="학습 완료 진도" aria-valuemin={0} aria-valuemax={chapters.length} aria-valuenow={completed.length}><span>{completed.length}/{chapters.length} 완료</span><div><i style={{ width: `${progressPercent}%` }} /></div></div>
+        <span className="mobile-progress" aria-live="polite">{completed.length}/{chapters.length} 완료</span>
       </header>
 
-      {menuOpen && <button className="sidebar-backdrop" type="button" aria-label="목차 닫기" onClick={() => setMenuOpen(false)} />}
+      {storageError && <output className="storage-warning"><TriangleAlert size={16} /> {storageError}</output>}
 
-      <div className="workspace">
-        <aside id="course-sidebar" className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="가치평가 장별 목차">
-          <a className="hub-link" href="https://hyunchanwi.github.io/study-hub/"><HomeIcon size={15} /> Study Hub</a>
-          <div className="course-identity">
-            <span>INHA · VALUE LAB</span><strong>가치평가</strong><p>13개 강의자료 · Chapter 1–9</p>
-          </div>
-          <div className="side-progress">
-            <span>MY PROGRESS <b>{progress}%</b></span>
-            <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
-          </div>
-          <nav className="chapter-nav">
-            {chapters.map((chapter) => {
-              const isDone = completed.includes(chapter.id);
-              return (
-                <button key={chapter.id} type="button" className={`${activeChapter.id === chapter.id ? 'active' : ''} ${isDone ? 'done' : ''}`} onClick={() => selectChapter(chapter.id)} aria-current={activeChapter.id === chapter.id ? 'page' : undefined}>
-                  <span className="chapter-index">{isDone ? <Check size={13} /> : chapter.number}</span>
-                  <span><b>{chapter.title}</b><small>{chapter.label}</small></span>
-                </button>
-              );
-            })}
+      <div className="app-shell" id="top">
+        {menuModalOpen && <button type="button" className="sidebar-backdrop" aria-label="목차 닫기" onClick={() => closeDrawer()} />}
+        <aside
+          ref={sidebarRef}
+          className={`sidebar ${drawerOpen ? 'open' : ''} ${menuModalOpen ? 'menu-modal' : ''} ${searchResultsOpen ? 'search-results' : ''}`}
+          id="chapter-sidebar"
+          role={menuModalOpen ? 'dialog' : undefined}
+          aria-modal={menuModalOpen ? true : undefined}
+          aria-hidden={isMobile && drawerMode === 'closed' ? true : undefined}
+          aria-label={query.trim() ? '장 검색 결과' : '전체 장 목차'}
+          inert={isMobile && drawerMode === 'closed' ? true : undefined}
+        >
+          <a className="hub-back" href="https://hyunchanwi.github.io/study-hub/"><ArrowLeft size={15} /> 전체 과목</a>
+          <div className="sidebar-title"><BookOpen size={18} /><strong>{query.trim() ? `검색 결과 ${searchResults.length}개` : '전체 장'}</strong><button ref={closeButtonRef} type="button" onClick={() => query.trim() ? clearSearch(false) : closeDrawer()} aria-label={query.trim() ? '검색 결과 닫기 및 검색어 지우기' : '목차 닫기'}><X /></button></div>
+          <nav id="chapter-navigation" aria-label={query.trim() ? '검색된 강의 장 목록' : '강의 장 목록'}>
+            {navigationItems.map((result) => (
+              <button key={result.chapter.number} type="button" className={activeChapter === result.chapter.number ? 'active' : ''} onClick={() => selectChapter(result.chapter.number, query.trim() ? result : undefined)} aria-current={activeChapter === result.chapter.number ? 'page' : undefined}>
+                <span className="chapter-number">{String(result.chapter.number).padStart(2, '0')}</span>
+                <span>
+                  <strong>{result.chapter.title}</strong>
+                  {query.trim()
+                    ? <small className="search-match-meta"><b>{result.sectionLabel}</b>{result.snippet}</small>
+                    : <small>{result.chapter.description}</small>}
+                </span>
+                {completed.includes(result.chapter.number) && <Check className="chapter-check" size={16} />}
+              </button>
+            ))}
+            {navigationItems.length === 0 && <p className="empty-search"><strong>일치하는 내용이 없습니다.</strong><span>띄어쓰기를 바꾸거나 더 짧은 핵심어로 검색해보세요.</span></p>}
           </nav>
-          <div className="sidebar-note"><Calculator size={18} /><b>숫자보다 먼저 볼 것</b><p>현금흐름의 시점, 위험에 맞는 할인율, 비교 가능한 기준을 먼저 확인합니다.</p></div>
         </aside>
 
-        <section className="content" aria-live="polite">
-          <div className="lesson-hero">
+        <div className="content-wrap">
+          <section className="lesson-hero">
             <div>
-              <span className="eyebrow"><Landmark size={14} /> CHAPTER {activeChapter.number} · 학습 가능</span>
-              <h1>{activeChapter.title}</h1>
-              <p>{activeChapter.summary}</p>
-              <div className="topic-tags"><span>{activeChapter.label}</span><span>강의 {Number(activeChapter.number)}장</span></div>
+              <span className="eyebrow">CHAPTER {String(chapter.number).padStart(2, '0')} · 13개 강의자료 기반 정리</span>
+              <h1 ref={headingRef} tabIndex={-1}>{chapter.title}</h1>
+              <p>{chapter.description}</p>
+              <div className="topic-row">{chapter.topics.map((topic) => <span key={topic}>{topic}</span>)}</div>
             </div>
-            <button className={`complete-button ${completed.includes(activeChapter.id) ? 'completed' : ''}`} type="button" onClick={() => toggleComplete(activeChapter.id)} aria-pressed={completed.includes(activeChapter.id)}>
-              <CheckCircle2 size={18} /> {completed.includes(activeChapter.id) ? '학습 완료됨' : '이 장 학습 완료'}
+            <button type="button" className={`complete-button ${completed.includes(chapter.number) ? 'done' : ''}`} onClick={toggleCompleted} aria-pressed={completed.includes(chapter.number)}>
+              <Target size={19} /> {completed.includes(chapter.number) ? '학습 완료됨' : '학습 완료 표시'}
             </button>
+          </section>
+
+          <SectionNavigation chapter={chapter} compact onNavigate={navigateSection} />
+
+          <div className="lesson-layout">
+            <ChapterLesson
+              key={chapter.number}
+              chapter={chapter}
+              completed={completed.includes(chapter.number)}
+              searchJump={searchJump}
+              onToggleCompleted={toggleCompleted}
+              onSelectChapter={selectChapter}
+              onNavigateSection={navigateSection}
+            />
+            <aside className="on-this-page">
+              <strong>이 장의 구성</strong>
+              <SectionNavigation chapter={chapter} onNavigate={navigateSection} />
+              <div className="memory-tip"><Sparkles size={17} /><span><strong>기억 공식</strong>{chapter.memory}</span></div>
+            </aside>
           </div>
-
-          <div className="lesson-stack">
-            <article className="note-card intro-card" id="chapter-core">
-              <span className="section-kicker"><BookOpen size={14} /> 이 장의 핵심 흐름</span>
-              <h2>{activeChapter.label}</h2>
-              <p className="lead">{activeChapter.summary}</p>
-              <div className="concept-grid">
-                {activeChapter.concepts.map((concept, index) => (
-                  <section id={`concept-${index + 1}`} key={concept}>
-                    <span>{String(index + 1).padStart(2, '0')}</span><b>{concept}</b>
-                    <p>{index === 0 ? '정의와 판단 기준을 먼저 확인합니다.' : index === 1 ? '앞 개념과의 연결을 설명해 봅니다.' : index === 2 ? '계산 또는 비교 순서를 점검합니다.' : '문제 조건과 해석의 한계를 함께 봅니다.'}</p>
-                  </section>
-                ))}
-              </div>
-              {activeChapter.formula ? (
-                <div className="chapter-formula"><span>KEY FORMULA</span><code>{activeChapter.formula}</code><p>기호의 뜻과 문제 조건을 확인한 뒤 수치에 적용하세요.</p></div>
-              ) : (
-                <div className="chapter-formula text-memory"><span>KEY QUESTION</span><b>무엇을 비교하고, 어떤 기준으로 판단하는가?</b><p>정의만 외우지 말고 평가 대상과 판단 기준을 한 문장으로 연결하세요.</p></div>
-              )}
-            </article>
-
-            <article className="note-card map-card" id="learning-map">
-              <div className="card-heading">
-                <div><span className="section-kicker"><Target size={14} /> 전체 학습 지도</span><h2>9개 장을 세 단계로 연결</h2></div>
-                <button type="button" onClick={copyStudyOrder}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? '복사됨' : '순서 복사'}</button>
-              </div>
-              <div className="phase-grid">
-                <section><b>01</b><span>기초 설계</span><p>1 기초 → 2 현금흐름 → 3 자본비용</p></section>
-                <section><b>02</b><span>가치 계산</span><p>4 투자안 → 5 증권 → 6 상대가치</p></section>
-                <section><b>03</b><span>기업 진단</span><p>7 기본적 분석 → 8 종합비율 → 9 레버리지</p></section>
-              </div>
-              <div className="decision-flow" aria-label="가치평가 의사결정 흐름">
-                <span><Target /> 현금흐름</span><b>+</b><span><ShieldCheck /> 할인율</span><b>→</b><span><CircleDollarSign /> 현재가치</span><b>→</b><span><TrendingUp /> 의사결정</span>
-              </div>
-            </article>
-
-            <article className="note-card formula-card" id="formula-desk">
-              <span className="section-kicker"><Calculator size={14} /> FORMULA DESK</span><h2>수식은 의미와 함께</h2>
-              <div className="formula-grid">
-                <section><span>현재가치</span><code>PV = FV / (1 + r)ⁿ</code><p>미래 현금흐름을 같은 시점의 숫자로 바꿉니다.</p></section>
-                <section><span>순현재가치</span><code>NPV = Σ CFₜ / (1 + r)ᵗ − I₀</code><p>0보다 크면 투자안이 가치를 더합니다.</p></section>
-                <section><span>자기자본비용</span><code>kₑ = Rf + β(E(Rm) − Rf)</code><p>체계적 위험에 필요한 보상을 반영합니다.</p></section>
-                <section><span>결합레버리지</span><code>DCL = DOL × DFL</code><p>매출 변화가 EPS까지 확대되는 효과입니다.</p></section>
-              </div>
-              <p className="source-note">수식 표기는 강의자료에서 명확히 확인된 형태만 요약했습니다. 기호 정의와 문제 조건은 해당 장의 원문을 함께 확인하세요.</p>
-            </article>
-
-            <article className="rule-card" id="decision-rule">
-              <span className="section-kicker"><ShieldCheck size={14} /> DECISION RULE</span><h2>시험에서 자주 섞이는 구분</h2>
-              <div className="rule-grid">
-                <section><b>포함</b><h3>증분현금흐름</h3><p>잠식효과, 기회비용, 운전자본 증감, 처분 관련 세금</p></section>
-                <section><b>제외</b><h3>현금흐름이 아닌 것</h3><p>매몰원가, 감가상각비 자체, 자금조달비용의 중복 반영</p></section>
-                <section><b>우선</b><h3>NPV 판단</h3><p>NPV와 IRR이 충돌하면 가치 증가액을 직접 나타내는 NPV</p></section>
-              </div>
-            </article>
-
-            <section className="quiz-card" id="quick-check">
-              <div className="quiz-heading"><span className="section-kicker"><BarChart3 size={14} /> QUICK CHECK</span><h2>3문제로 연결 확인</h2></div>
-              {quizItems.map((item, index) => (
-                <article className="quiz-item" key={item.question}>
-                  <div><span>Q{index + 1}</span><h3>{item.question}</h3></div>
-                  <div className="option-row">
-                    {item.options.map((option, optionIndex) => <button key={option} type="button" onClick={() => setAnswers((current) => ({ ...current, [index]: optionIndex }))} className={answers[index] === optionIndex ? (optionIndex === item.answer ? 'correct' : 'wrong') : ''}>{option}</button>)}
-                  </div>
-                  {answers[index] !== undefined && <p className={answers[index] === item.answer ? 'answer-note correct-note' : 'answer-note'}>{answers[index] === item.answer ? '정답. ' : '다시 생각해보세요. '}{item.note}</p>}
-                </article>
-              ))}
-            </section>
-
-            <nav className="chapter-pager" aria-label="이전·다음 장">
-              <button type="button" disabled={activeIndex === 0} onClick={() => selectChapter(chapters[activeIndex - 1].id)}><ArrowLeft size={17} /> 이전 장</button>
-              <span>{activeChapter.number} / {String(chapters.length).padStart(2, '0')}</span>
-              <button type="button" disabled={activeIndex === chapters.length - 1} onClick={() => selectChapter(chapters[activeIndex + 1].id)}>다음 장 <ArrowRight size={17} /></button>
-            </nav>
-
-            <footer><strong>VALUATION DESK</strong><p>가치평가 강의자료 13개 PDF · Chapter 1–9 기준 정리</p><div><a href="https://hyunchanwi.github.io/study-hub/">← 전체 과목</a><a href="#top">맨 위로 ↑</a></div></footer>
-          </div>
-        </section>
-
-        <aside className="right-rail" aria-label="현재 장 요약">
-          <div className="rail-block">
-            <span className="rail-label">현재 장 목차</span>
-            {activeChapter.concepts.map((concept, index) => <a key={concept} href={`#concept-${index + 1}`}>{String(index + 1).padStart(2, '0')} {concept}</a>)}
-          </div>
-          <div className="memory-card"><Sparkles size={18} /><b>{activeChapter.formula ? '기억할 공식' : '기억할 질문'}</b>{activeChapter.formula ? <code>{activeChapter.formula}</code> : <p>대상·기준·방법을 한 문장으로 설명할 수 있는가?</p>}</div>
-          <div className="source-card"><BookOpen size={17} /><b>학습 근거</b><p>강의 {Number(activeChapter.number)}장 범위</p><span>확인된 강의 내용만 요약</span></div>
-        </aside>
+        </div>
       </div>
     </main>
   );
