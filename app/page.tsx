@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -19,13 +19,14 @@ import {
   X,
 } from 'lucide-react';
 import { chapters, type Chapter } from '../src/chapter-data';
+import { getLearningSection, getLearningSectionSearchText } from '../content/registry';
+import { parseLessonSectionHash, type LessonSectionId } from '../lib/navigation/lesson-location';
 
 const progressKey = 'valuation-study-progress';
 const legacyProgressKey = 'valuation-study-completed';
 const lastLocationKey = 'valuation-study-location';
 const validChapterNumbers = new Set(chapters.map((chapter) => chapter.number));
 type DrawerMode = 'closed' | 'menu' | 'search';
-type LessonSectionId = 'easy' | 'flow' | 'key' | 'compare' | 'formula' | 'check';
 type SearchResult = {
   chapter: Chapter;
   section: LessonSectionId;
@@ -36,6 +37,7 @@ type SearchJump = Pick<SearchResult, 'section' | 'sectionLabel' | 'snippet'> & {
 
 const sectionLabels: Record<LessonSectionId, string> = {
   easy: '쉬운 설명',
+  'present-value': '현재가치 상세',
   flow: '핵심 흐름',
   key: '핵심 개념',
   compare: '비교 정리',
@@ -43,10 +45,18 @@ const sectionLabels: Record<LessonSectionId, string> = {
   check: '이해도 확인',
 };
 
+const presentValueLearning = getLearningSection('chapter-2', 'present-value');
+const PresentValueLesson = lazy(() => import('../components/learning/PresentValueLesson').then(
+  (module) => ({ default: module.PresentValueLesson }),
+));
+
 const normalizeSearch = (value: string) => value.normalize('NFKC').toLowerCase();
 const compactSearch = (value: string) => normalizeSearch(value).replace(/[^\p{L}\p{N}]+/gu, '');
 
 const getSearchEntries = (chapter: Chapter): { section: LessonSectionId; text: string }[] => [
+  ...(chapter.number === 2 && presentValueLearning
+    ? [{ section: 'present-value' as const, text: getLearningSectionSearchText(presentValueLearning) }]
+    : []),
   ...(chapter.formula ? [{ section: 'formula' as const, text: `${chapter.formula.title} ${chapter.formula.expression} ${chapter.formula.explanation}` }] : []),
   { section: 'key', text: `${chapter.keyTitle} ${chapter.keyPoints.flatMap((point) => [point.title, point.body]).join(' ')}` },
   { section: 'compare', text: `${chapter.compareTitle} ${chapter.compareLead} ${chapter.compareHeaders.join(' ')} ${chapter.compareRows.flat().join(' ')}` },
@@ -93,11 +103,6 @@ const findSearchResult = (chapter: Chapter, query: string): SearchResult | null 
   };
 };
 
-const parseSectionHash = (hash: string): LessonSectionId | undefined => {
-  const section = hash.replace(/^#/, '') as LessonSectionId;
-  return section in sectionLabels ? section : undefined;
-};
-
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const readStoredProgress = (): { completed: number[]; failed: boolean } => {
@@ -127,14 +132,14 @@ const readInitialLocation = (): { chapter: number; section?: LessonSectionId } =
 
   const url = new URL(window.location.href);
   const urlChapter = Number(url.searchParams.get('chapter'));
-  if (validChapterNumbers.has(urlChapter)) return { chapter: urlChapter, section: parseSectionHash(url.hash) };
+  if (validChapterNumbers.has(urlChapter)) return { chapter: urlChapter, section: parseLessonSectionHash(url.hash, urlChapter) };
 
   try {
     const stored = window.localStorage.getItem(lastLocationKey);
     if (stored) {
       const parsed = JSON.parse(stored) as { chapter?: unknown; section?: unknown };
       if (typeof parsed.chapter === 'number' && validChapterNumbers.has(parsed.chapter)) {
-        const section = typeof parsed.section === 'string' ? parseSectionHash(parsed.section) : undefined;
+        const section = typeof parsed.section === 'string' ? parseLessonSectionHash(parsed.section, parsed.chapter) : undefined;
         return { chapter: parsed.chapter, section };
       }
     }
@@ -245,6 +250,15 @@ function ChapterLesson({
           <span>{chapter.definition}</span>
         </div>
       </section>
+
+      {chapter.number === 2 && presentValueLearning && (
+        <Suspense fallback={<section className="pv-section-header"><h2 id="present-value" tabIndex={-1}>현재가치 상세 학습을 불러오는 중입니다.</h2></section>}>
+          <PresentValueLesson
+            section={presentValueLearning}
+            searchJump={searchJump?.section === 'present-value' ? searchJump : null}
+          />
+        </Suspense>
+      )}
 
       <section className={`lesson-section ${searchJump?.section === 'flow' ? 'search-highlight' : ''}`} id="flow" tabIndex={-1}>
         <SearchLocationNote section="flow" jump={searchJump} />
@@ -373,7 +387,8 @@ function SectionNavigation({
   onNavigate: (section: LessonSectionId) => void;
 }) {
   const sections = (Object.keys(sectionLabels) as LessonSectionId[])
-    .filter((section) => section !== 'formula' || chapter.formula);
+    .filter((section) => section !== 'formula' || chapter.formula)
+    .filter((section) => section !== 'present-value' || (chapter.number === 2 && Boolean(presentValueLearning)));
 
   return (
     <nav className={compact ? 'compact-section-nav' : 'section-links'} aria-label="이 장의 구성">
@@ -503,7 +518,7 @@ export default function Home() {
       const url = new URL(window.location.href);
       const number = Number(url.searchParams.get('chapter'));
       const nextChapter = validChapterNumbers.has(number) ? number : chapters[0]?.number ?? 1;
-      const section = parseSectionHash(url.hash);
+      const section = parseLessonSectionHash(url.hash, nextChapter);
       setActiveChapter(nextChapter);
       setQuery('');
       setSearchJump(null);

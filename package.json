@@ -10,7 +10,7 @@
     "build": "vinext build",
     "build:pages": "vite build --config vite.pages.config.ts",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "lint": "oxlint app src",
+    "lint": "oxlint app src components/learning content lib tests",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "format": "oxfmt"
   },
