@@ -1,4 +1,5 @@
 'use client';
+import { ClaudeStudyNotes, StudyNotesJump } from './claude-study-notes';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -755,6 +756,7 @@ export default function Home() {
 
           <SectionNavigation chapter={chapter} compact onNavigate={navigateSection} />
 
+          <StudyNotesJump>이 장의 상세 정리·내 질문 보기 ↓</StudyNotesJump>
           <div className="lesson-layout">
             <ChapterLesson
               key={chapter.number}
@@ -771,6 +773,7 @@ export default function Home() {
               <div className="memory-tip"><Sparkles size={17} /><span><strong>기억 공식</strong>{chapter.memory}</span></div>
             </aside>
           </div>
+          <ClaudeStudyNotes key={chapter.number} initialScope={`ch${chapter.number}`} locked />
         </div>
       </div>
     </main>
