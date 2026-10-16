@@ -113,3 +113,17 @@ void test('게시용 데이터는 비공개 경로·산출물 링크를 포함�
   assert.doesNotMatch(JSON.stringify({ lectureSummaries, studyNotes }), /sandbox:|\/Users\/|\/mnt\/data|https?:\/\/[^\s"]*chatgpt\.com\/c\//);
   assert.ok(studyNotes.some((note) => note.source.includes('GPT')));
 });
+
+void test('풀이 순서·잔존가치 조건·ARR의 분모 정의를 명시한다', () => {
+  const cashflow = lectureSummaries.find((l) => l.id === 'valuation-cashflow')!;
+  assert.ok(cashflow.sections.findIndex((s) => s.title.startsWith('대체투자 문제')) < cashflow.sections.findIndex((s) => s.title.startsWith('예제 4-3')));
+  assert.match(getLectureSearchText(cashflow), /잔존가치 0/);
+  assert.match(getLectureSearchText(cashflow), /600−0=600/);
+  const capital = lectureSummaries.find((l) => l.id === 'valuation-capital')!;
+  assert.equal(capital.sections.filter((s) => s.title.startsWith('예제 8-3')).length, 4);
+  const investment = getLectureSearchText(lectureSummaries.find((l) => l.id === 'valuation-investment')!);
+  assert.equal((600-500)/500, 0.2);
+  assert.equal((600-500)/1000, 0.1);
+  assert.match(investment, /arr=100\/500=20%/);
+  assert.match(investment, /npv≈41.32/);
+});
