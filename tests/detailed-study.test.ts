@@ -127,3 +127,8 @@ void test('풀이 순서·잔존가치 조건·ARR의 분모 정의를 명시한
   assert.match(investment, /arr=100\/500=20%/);
   assert.match(investment, /npv≈41.32/);
 });
+
+void test('직접 장 링크로 들어와도 현재 위치를 저장하고 URL 해시는 보존한다', () => {
+  const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /if \(!hasValidUrlChapter\) writeLocation[^;]+;\s*else \{\s*try \{\s*window.localStorage.setItem\(lastLocationKey, JSON.stringify\(initialLocation\)\)/);
+});

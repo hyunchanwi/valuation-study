@@ -513,6 +513,13 @@ export default function Home() {
       setStorageError('기존 학습 진도는 불러왔지만 새 저장 형식으로 옮기지 못했습니다.');
     }
     if (!hasValidUrlChapter) writeLocation(initialLocation.chapter, initialLocation.section, true);
+    else {
+      try {
+        window.localStorage.setItem(lastLocationKey, JSON.stringify(initialLocation));
+      } catch {
+        setStorageError('이 브라우저에서는 마지막 학습 위치를 저장할 수 없습니다.');
+      }
+    }
     if (initialLocation.section) focusDestination(initialLocation.section, false);
 
     const syncFromBrowser = () => {
